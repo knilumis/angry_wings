@@ -13,12 +13,20 @@ import {
   getPartDurabilityMap,
   indexPartsById,
   createDefaultBuild,
+  isTestOverrideProgression,
 } from "../systems/buildSystem.js";
 import {
   completeLevel,
   getNextPlayableLevel,
   isLevelUnlocked,
 } from "../systems/progressionSystem.js";
+
+const POST_EXPLOSION_RESULT_DELAY_SEC = 1.5;
+
+function starBar(stars = 0) {
+  const safe = Math.max(0, Math.min(3, Number(stars) || 0));
+  return `${"★".repeat(safe)}${"☆".repeat(3 - safe)}`;
+}
 
 function objectiveText(objective, progressItem) {
   const current = progressItem?.current || 0;
@@ -55,8 +63,12 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
 
   const build = appState.save.currentBuild || createDefaultBuild();
   const partsById = indexPartsById(appState.parts);
-  const summary = calculateBuildSummary(build, partsById, level.budgetLimit);
-  const hasSeeker = Boolean(build?.slots?.seeker);
+  const validationOverride = testMode || isTestOverrideProgression(appState.save.progression);
+  const summary = calculateBuildSummary(build, partsById, level.budgetLimit, {
+    ignoreBudget: validationOverride,
+    ignoreEnergy: validationOverride,
+  });
+  const hasSeeker = summary.selectedParts.some((entry) => entry.part.kategori === "seeker");
 
   if (!summary.validation.isValid) {
     mount.innerHTML = `
@@ -156,6 +168,10 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
       height: canvas.clientHeight,
     },
   });
+  missionState.launchAssist = {
+    powerPercent: Number(powerRange.value),
+    angleDeg: Number(angleRange.value),
+  };
 
   const renderer = createRenderer(canvas);
   const input = createInputController(canvas);
@@ -163,6 +179,7 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
   let disposed = false;
   let missionEnded = false;
   let rewardText = "";
+  let postExplosionDelayElapsed = 0;
 
   function renderObjectives() {
     const progress = getObjectiveProgress(missionState);
@@ -183,6 +200,8 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
       <div>Skor: ${Math.round(missionState.score)}</div>
       <div>Can: ${Math.max(0, Math.round(missionState.drone.health))}</div>
       <div>Hedef: ${missionState.destroyedTargets}</div>
+      <div>Hedef Hasari: %${(Number(missionState.targetDamagePercent) || 0).toFixed(1)}</div>
+      <div>Yildiz: ${starBar(missionState.missionStars)}</div>
       <div>Bonus: ${missionState.collectedBonus}</div>
       <div>Otopilot: ${missionState.autopilotMode === "off" ? "Manuel" : missionState.autopilotMode}</div>
       ${warnLines.map((line) => `<div class="warn">${line}</div>`).join("")}
@@ -193,6 +212,8 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
   function onMissionFinished() {
     missionEnded = true;
     loop.stop();
+    const damagePercent = (Number(missionState.targetDamagePercent) || 0).toFixed(1);
+    const starLabel = starBar(missionState.missionStars);
 
     if (missionState.status === "success") {
       if (!testMode) {
@@ -224,6 +245,15 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
       rewardText = "Drone düştü veya süre doldu.";
     }
 
+    const damageSummary = `Hasar %${damagePercent} • ${starLabel}`;
+    if (missionState.status === "success") {
+      rewardText = testMode
+        ? `${damageSummary} • Test ucusunda ilerleme kaydi yapilmaz.`
+        : `${damageSummary} • ${rewardText}`;
+    } else {
+      rewardText = `${damageSummary} • %60 alti hasar: gorev basarisiz.`;
+    }
+
     const nextLevel = Math.min(appState.levels.length, levelNumber + 1);
     const canGoNext = !testMode && missionState.status === "success" && levelNumber < appState.levels.length;
 
@@ -232,6 +262,7 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
       <div class="modal-card">
         <h3>${missionState.status === "success" ? "Görev Başarılı" : "Görev Başarısız"}</h3>
         <p>Skor: <strong>${Math.round(missionState.score)}</strong></p>
+        <p>Hedef Hasari: <strong>%${damagePercent}</strong> • Yildiz: <strong>${starLabel}</strong></p>
         <p>${rewardText}</p>
         <div class="row">
           <button class="btn-secondary" data-modal-action="retry">Tekrar Dene</button>
@@ -263,6 +294,13 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
     renderObjectives();
 
     if (!missionEnded && (missionState.status === "success" || missionState.status === "fail")) {
+      const explodedAt = Number(missionState.lastExplosionAt);
+      const shouldDelayResult = Number.isFinite(explodedAt) && postExplosionDelayElapsed < POST_EXPLOSION_RESULT_DELAY_SEC;
+
+      if (shouldDelayResult) {
+        postExplosionDelayElapsed += dt;
+        return;
+      }
       onMissionFinished();
     }
   }
@@ -270,6 +308,13 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
   function render() {
     renderer.render(missionState);
   }
+
+  const updateLaunchAssist = () => {
+    missionState.launchAssist = {
+      powerPercent: Number(powerRange.value),
+      angleDeg: Number(angleRange.value),
+    };
+  };
 
   const loop = createGameLoop({ update, render });
   loop.start();
@@ -321,14 +366,18 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
   };
 
   const onLaunch = () => {
+    updateLaunchAssist();
     launchDrone(missionState, {
       powerPercent: Number(powerRange.value),
       angleDeg: Number(angleRange.value),
     });
+    missionState.launchAssist = null;
     launchButton.disabled = true;
     audio.launch();
   };
 
+  powerRange.addEventListener("input", updateLaunchAssist);
+  angleRange.addEventListener("input", updateLaunchAssist);
   launchButton.addEventListener("click", onLaunch);
   mount.addEventListener("click", onClick);
 
@@ -340,6 +389,8 @@ export function renderLevelScreen({ mount, appState, manager, audio, params, sav
       disposed = true;
       loop.stop();
       input.dispose();
+      powerRange.removeEventListener("input", updateLaunchAssist);
+      angleRange.removeEventListener("input", updateLaunchAssist);
       launchButton.removeEventListener("click", onLaunch);
       mount.removeEventListener("click", onClick);
     },

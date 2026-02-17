@@ -1,33 +1,98 @@
-import { getNextPlayableLevel } from "../systems/progressionSystem.js";
+﻿import { getNextPlayableLevel } from "../systems/progressionSystem.js";
+
+function getCompletedCount(progression) {
+  return Object.keys(progression.completedLevels || {}).length;
+}
+
+function getBestScore(progression) {
+  return Object.values(progression.completedLevels || {}).reduce((best, value) => {
+    return Math.max(best, Number(value) || 0);
+  }, 0);
+}
+
+function getAverageScore(progression) {
+  const values = Object.values(progression.completedLevels || {}).map((value) => Number(value) || 0);
+  if (values.length === 0) {
+    return 0;
+  }
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return Math.round(total / values.length);
+}
 
 export function renderMenuScreen({ mount, appState, audio, manager, saveAll }) {
+  const progression = appState.save.progression;
   const totalLevels = appState.levels.length;
-  const nextLevel = getNextPlayableLevel(appState.save.progression, totalLevels);
+  const nextLevel = getNextPlayableLevel(progression, totalLevels);
+  const completedCount = getCompletedCount(progression);
+  const unlockedCount = progression.unlockedLevels.length;
+  const completionRatio = totalLevels > 0 ? Math.round((completedCount / totalLevels) * 100) : 0;
+  const bestScore = getBestScore(progression);
+  const avgScore = getAverageScore(progression);
 
   mount.innerHTML = `
-    <div class="screen-header">
+    <div class="screen-header menu-header">
       <div>
-        <h2 class="screen-title">Ana Menü</h2>
-        <div class="screen-subtitle">Tasarla, fırlat, hedefleri vur, yeni parçaları aç.</div>
+        <h2 class="screen-title">Ana Menu</h2>
+        <div class="screen-subtitle">Tasarla, firlat, hedefleri vur, yeni parcalari ac.</div>
       </div>
-      <div class="tag">Sonraki Görev: ${String(nextLevel).padStart(2, "0")}</div>
+      <div class="tag">Sonraki Gorev ${String(nextLevel).padStart(2, "0")}</div>
     </div>
-    <div class="screen-body">
-      <div class="menu-grid">
+
+    <div class="screen-body menu-body">
+      <section class="menu-hero">
+        <div class="menu-hero-copy">
+          <p class="menu-kicker">Operasyon Brifingi</p>
+          <h3>Kamikaze ucagini optimize et, tek atista hedef zincirini indir.</h3>
+          <p>Garajda aerodinamik tuning yap, atolyeden parcani sec, gorevde dogru aciyla firlat.</p>
+          <div class="menu-hero-actions">
+            <button class="btn" data-action="play">Goreve Basla</button>
+            <button class="btn-secondary" data-action="garage">Garaja Git</button>
+          </div>
+        </div>
+
+        <div class="menu-hero-stats">
+          <div class="hero-stat">
+            <span>Seviye Tamamlama</span>
+            <strong>%${completionRatio}</strong>
+          </div>
+          <div class="hero-stat">
+            <span>Tamamlanan</span>
+            <strong>${completedCount}/${totalLevels}</strong>
+          </div>
+          <div class="hero-stat">
+            <span>Acik Gorev</span>
+            <strong>${unlockedCount}</strong>
+          </div>
+          <div class="hero-stat">
+            <span>En Yuksek Skor</span>
+            <strong>${Math.round(bestScore)}</strong>
+          </div>
+          <div class="hero-stat">
+            <span>Ortalama Skor</span>
+            <strong>${avgScore}</strong>
+          </div>
+          <div class="hero-stat">
+            <span>Kredi Havuzu</span>
+            <strong>${progression.credits}</strong>
+          </div>
+        </div>
+      </section>
+
+      <div class="menu-grid menu-grid-rich">
         <section class="menu-card">
           <div>
-            <h3>Oyna</h3>
-            <p>Bir sonraki açık göreve hemen başla.</p>
+            <h3>Kampanya</h3>
+            <p>Bir sonraki acik gorevden devam et ve puanini yukari cek.</p>
           </div>
           <div class="menu-actions">
-            <button class="btn" data-action="play">Göreve Başla</button>
+            <button class="btn" data-action="play">Goreve Basla</button>
           </div>
         </section>
 
         <section class="menu-card">
           <div>
             <h3>Garaj</h3>
-            <p>Drone tasarımını sürükle-bırak ile hazırla.</p>
+            <p>Yan profilde ucagini parca parca kur ve tuning degerlerini ayarla.</p>
           </div>
           <div class="menu-actions">
             <button class="btn-secondary" data-action="garage">Garaja Git</button>
@@ -36,32 +101,32 @@ export function renderMenuScreen({ mount, appState, audio, manager, saveAll }) {
 
         <section class="menu-card">
           <div>
-            <h3>Atölye (Parçalar)</h3>
-            <p>Seviye ile açılan modülleri ve teknoloji yolunu incele.</p>
+            <h3>Atolye</h3>
+            <p>Malzeme kademelerini, itki tiplerini ve kilitli parcalari incele.</p>
           </div>
           <div class="menu-actions">
-            <button class="btn-secondary" data-action="workshop">Atölyeyi Aç</button>
+            <button class="btn-secondary" data-action="workshop">Atolyeyi Ac</button>
           </div>
         </section>
 
         <section class="menu-card">
           <div>
-            <h3>Nasıl Oynanır</h3>
-            <p>Kısa rehber: tasarla, fırlat, kontrol et, hedefleri tamamla.</p>
+            <h3>Nasil Oynanir</h3>
+            <p>Tasarimdan firlatisa kadar tum donguyu 4 adimda ogren.</p>
           </div>
           <div class="menu-actions">
-            <button class="btn-secondary" data-action="howto">Rehberi Aç</button>
+            <button class="btn-secondary" data-action="howto">Rehberi Ac</button>
           </div>
         </section>
 
         <section class="menu-card">
           <div>
             <h3>Ayarlar</h3>
-            <p>Dil sabit: Türkçe. Ses ve ilerleme seçeneklerini yönet.</p>
+            <p>Ses ayarini yonet, gerekirse tum ilerlemeyi sifirla.</p>
           </div>
           <div class="menu-actions">
-            <button class="btn-secondary" data-action="toggle-sound">${appState.save.settings.soundEnabled ? "Ses: Açık" : "Ses: Kapalı"}</button>
-            <button class="btn-danger" data-action="reset-progress">Sıfırla</button>
+            <button class="btn-secondary" data-action="toggle-sound">${appState.save.settings.soundEnabled ? "Ses: Acik" : "Ses: Kapali"}</button>
+            <button class="btn-danger" data-action="reset-progress">Sifirla</button>
           </div>
         </section>
       </div>
@@ -106,7 +171,7 @@ export function renderMenuScreen({ mount, appState, audio, manager, saveAll }) {
     }
 
     if (action === "reset-progress") {
-      const confirmed = window.confirm("Tüm ilerleme, krediler ve görev kayıtları sıfırlansın mı?");
+      const confirmed = window.confirm("Tum ilerleme, krediler ve gorev kayitlari sifirlansin mi?");
       if (!confirmed) {
         return;
       }

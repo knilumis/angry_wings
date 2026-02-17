@@ -1,30 +1,85 @@
-import {
+﻿import {
   SLOT_DEFINITIONS,
   createDefaultBuild,
   indexPartsById,
   placePartInBuild,
   removePartFromBuild,
   calculateBuildSummary,
+  isTestOverrideProgression,
   cloneBuild,
+  normalizeBuildTuning,
 } from "../systems/buildSystem.js";
 import { getNextPlayableLevel } from "../systems/progressionSystem.js";
 
 const CATEGORY_LABELS = {
-  core: "Core",
+  core: "Govde",
   wings: "Kanat",
-  tail: "Kuyruk",
+  tail: "Fin",
   warhead: "Harp",
-  seeker: "Arayıcı",
+  seeker: "Arayici",
   autopilot: "Otopilot",
   link: "Link",
-  power: "Güç",
+  power: "Itki",
   extra: "Ek",
 };
 
-const SLOT_LABELS = SLOT_DEFINITIONS.reduce((acc, slot) => {
-  acc[slot.id] = slot.label;
-  return acc;
-}, {});
+const MATERIAL_LABELS = {
+  kopuk: "Kopuk",
+  ahsap: "Ahsap",
+  kompozit: "Kompozit",
+};
+
+const THRUST_LABELS = {
+  electric: "Elektrikli",
+  gasoline: "Benzinli",
+  jet: "Jet",
+};
+
+const MATERIAL_RANK = {
+  kopuk: 1,
+  ahsap: 2,
+  kompozit: 3,
+};
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function shortName(value, max = 22) {
+  if (!value || value.length <= max) {
+    return value || "";
+  }
+  return `${value.slice(0, max - 3)}...`;
+}
+
+function slotAt(row, col) {
+  return SLOT_DEFINITIONS.find((slot) => slot.grid.row === row && slot.grid.col === col) || null;
+}
+
+function materialTierForPart(part) {
+  if (!part) return "kopuk";
+  if (part.materialTier) return part.materialTier;
+  if (part.rarity === "epic") return "kompozit";
+  if (part.rarity === "rare") return "ahsap";
+  return "kopuk";
+}
+
+function materialLabel(part) {
+  const tier = materialTierForPart(part);
+  return MATERIAL_LABELS[tier] || "Kopuk";
+}
+
+function thrustTypeForPart(part) {
+  if (!part) return null;
+  if (part.thrustType) return part.thrustType;
+  if ((part.energyOut || 0) >= 6) return "jet";
+  if ((part.energyOut || 0) >= 3.5) return "gasoline";
+  return "electric";
+}
+
+function thrustLabel(type) {
+  return THRUST_LABELS[type] || "Yok";
+}
 
 function getStarterPart(parts, category) {
   return parts
@@ -40,107 +95,57 @@ function createStarterBuild(parts) {
   const starterPower = getStarterPart(parts, "power");
 
   if (starterCore) {
-    build.slots.core = starterCore.id;
+    build.slots["cell-1-1"] = starterCore.id;
+    build.slots["cell-1-2"] = starterCore.id;
   }
   if (starterWing) {
-    build.slots.wingLeft = starterWing.id;
-    build.slots.wingRight = starterWing.id;
+    build.slots["cell-0-2"] = starterWing.id;
   }
   if (starterTail) {
-    build.slots.tail = starterTail.id;
+    build.slots["cell-1-0"] = starterTail.id;
   }
   if (starterPower) {
-    build.slots.power = starterPower.id;
+    build.slots["cell-2-2"] = starterPower.id;
   }
 
   return build;
 }
 
-function rarityLabel(rarity) {
-  if (rarity === "epic") return "Efsane";
-  if (rarity === "rare") return "Nadir";
-  return "Standart";
+function materialClassName(part) {
+  return `tag-material-${materialTierForPart(part)}`;
 }
 
-function slotAt(row, col) {
-  return SLOT_DEFINITIONS.find((slot) => slot.grid.row === row && slot.grid.col === col) || null;
+function thrustClassName(part) {
+  const type = thrustTypeForPart(part);
+  return type ? `tag-thrust-${type}` : "";
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function moduleColor(part, fallback = "#8ad4d8") {
-  if (!part) {
-    return fallback;
-  }
-  if (part.rarity === "epic") {
-    return "#f17f76";
-  }
-  if (part.rarity === "rare") {
-    return "#f4c16d";
-  }
-  return "#78d6c7";
-}
-
-function moduleAccent(part, fallback = "#cceeed") {
-  if (!part) {
-    return fallback;
-  }
-  if (part.rarity === "epic") {
-    return "#ffd4cc";
-  }
-  if (part.rarity === "rare") {
-    return "#ffe9be";
-  }
-  return "#d7f6f1";
-}
-
-function getAirframePalette(core) {
-  if (!core) {
+function getMaterialPalette(tier) {
+  if (tier === "kompozit") {
     return {
-      top: "#c9d6db",
-      mid: "#9aa9b0",
-      bottom: "#6f7f86",
-      line: "rgba(18, 24, 28, 0.45)",
-      accent: "#a7d7d1",
+      top: "#cfd9e2",
+      mid: "#8ea1b2",
+      bottom: "#627689",
+      rim: "rgba(12, 18, 24, 0.44)",
+      accent: "#f2cd7d",
     };
   }
-
-  if (core.rarity === "epic") {
+  if (tier === "ahsap") {
     return {
-      top: "#b8c2ce",
-      mid: "#8e9db1",
-      bottom: "#66788f",
-      line: "rgba(11, 17, 22, 0.5)",
-      accent: "#f5d07f",
+      top: "#d4c29a",
+      mid: "#b18f63",
+      bottom: "#7f6241",
+      rim: "rgba(25, 17, 10, 0.44)",
+      accent: "#f4dda9",
     };
   }
-
-  if (core.rarity === "rare") {
-    return {
-      top: "#c2cdc1",
-      mid: "#95a493",
-      bottom: "#6f816d",
-      line: "rgba(14, 20, 16, 0.48)",
-      accent: "#9fd8c8",
-    };
-  }
-
   return {
-    top: "#cfd7d8",
-    mid: "#a9b4b8",
-    bottom: "#78858c",
-    line: "rgba(18, 24, 28, 0.45)",
-    accent: "#8cd0d7",
+    top: "#f4f0d9",
+    mid: "#d9cfb2",
+    bottom: "#b7ad95",
+    rim: "rgba(33, 28, 22, 0.38)",
+    accent: "#fff5df",
   };
-}
-
-function shortName(value, max = 17) {
-  if (!value || value.length <= max) {
-    return value;
-  }
-  return `${value.slice(0, max - 3)}...`;
 }
 
 function drawRoundedRect(ctx, x, y, width, height, radius) {
@@ -158,42 +163,122 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
   ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
   ctx.lineTo(x, y + radius);
   ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
 }
 
-function drawCallout(ctx, note, width, height) {
-  const textPaddingX = 6;
-  const textHeight = 16;
-  const fontSize = 11;
+function drawAirfoil(ctx, x, y, chord, thickness, sweep, fillStyle, strokeStyle, options = {}) {
+  const mirrorX = Boolean(options.mirrorX);
+  const incidenceDeg = Number(options.incidenceDeg) || 0;
 
   ctx.save();
-  ctx.font = `600 ${fontSize}px Trebuchet MS`;
+  ctx.translate(x, y);
+  ctx.rotate((incidenceDeg * Math.PI) / 180);
+  if (mirrorX) {
+    ctx.scale(-1, 1);
+  }
 
-  const textWidth = ctx.measureText(note.text).width;
-  const boxWidth = textWidth + textPaddingX * 2;
-  const boxXRaw = note.align === "right" ? note.x - boxWidth : note.x;
-  const boxX = clamp(boxXRaw, 8, width - boxWidth - 8);
-  const boxY = clamp(note.y, 8, height - textHeight - 8);
-  const attachX = note.align === "right" ? boxX + boxWidth : boxX;
-  const attachY = boxY + textHeight * 0.55;
-
-  ctx.strokeStyle = note.color;
-  ctx.lineWidth = 1.1;
   ctx.beginPath();
-  ctx.moveTo(note.anchorX, note.anchorY);
-  ctx.lineTo(attachX, attachY);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(5, 14, 18, 0.82)";
-  drawRoundedRect(ctx, boxX, boxY, boxWidth, textHeight, 5);
+  ctx.moveTo(0, 0);
+  ctx.bezierCurveTo(chord * 0.14, -thickness * 1.05, chord * 0.64, -thickness * 0.38, chord + sweep, 0);
+  ctx.bezierCurveTo(chord * 0.68, thickness * 0.5, chord * 0.16, thickness * 0.72, 0, 0);
+  ctx.closePath();
+  ctx.fillStyle = fillStyle;
   ctx.fill();
-  ctx.strokeStyle = note.color;
+
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = 1;
   ctx.stroke();
 
-  ctx.fillStyle = "#eef8fa";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  ctx.fillText(note.text, boxX + textPaddingX, boxY + textHeight * 0.55);
+  ctx.strokeStyle = "rgba(244, 253, 255, 0.34)";
+  ctx.beginPath();
+  ctx.moveTo(chord * 0.08, -thickness * 0.28);
+  ctx.quadraticCurveTo(chord * 0.44, -thickness * 0.64, chord * 0.88, -thickness * 0.2);
+  ctx.stroke();
   ctx.restore();
+}
+
+function drawFinProfile(ctx, rootX, rootY, finLength, finHeight, fillStyle, strokeStyle) {
+  const tailChord = finLength * 0.94;
+  const tailThickness = Math.max(3, finHeight * 0.12);
+  const tailSweep = finLength * 0.24;
+
+  drawAirfoil(
+    ctx,
+    rootX + finLength * 0.2,
+    rootY + finHeight * 0.18,
+    tailChord,
+    tailThickness,
+    tailSweep,
+    fillStyle,
+    strokeStyle,
+    { mirrorX: true, incidenceDeg: -4 },
+  );
+
+  ctx.fillStyle = fillStyle;
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = 1;
+  const finBaseY = rootY - finHeight * 0.14;
+  const finFrontX = rootX + finLength * 0.12;
+  const finRearX = rootX - finLength * 0.54;
+  const finTipY = rootY - finHeight * 1.02;
+  ctx.beginPath();
+  ctx.moveTo(finFrontX, finBaseY);
+  ctx.lineTo(finRearX, finBaseY);
+  ctx.lineTo(finRearX, finTipY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
+  ctx.beginPath();
+  ctx.moveTo(finFrontX - finLength * 0.1, finBaseY - finHeight * 0.04);
+  ctx.lineTo(finRearX + finLength * 0.1, finBaseY - finHeight * 0.06);
+  ctx.lineTo(finRearX + finLength * 0.08, finTipY + finHeight * 0.16);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function groupSelectedParts(build, partsById) {
+  const selected = Object.values(build?.slots || [])
+    .map((partId) => (partId ? partsById[partId] : null))
+    .filter(Boolean);
+
+  return selected.reduce(
+    (acc, part) => {
+      acc.all.push(part);
+      const key = part.kategori || "unknown";
+      if (!acc.byCategory[key]) {
+        acc.byCategory[key] = [];
+      }
+      acc.byCategory[key].push(part);
+      return acc;
+    },
+    { all: [], byCategory: {} },
+  );
+}
+
+function getDominantMaterial(coreParts) {
+  if (!coreParts || coreParts.length === 0) return "kopuk";
+  return coreParts
+    .map((part) => materialTierForPart(part))
+    .sort((a, b) => (MATERIAL_RANK[b] || 0) - (MATERIAL_RANK[a] || 0))[0];
+}
+
+function getActivePowerType(powerParts) {
+  if (!powerParts || powerParts.length === 0) {
+    return null;
+  }
+
+  const rank = { electric: 1, gasoline: 2, jet: 3 };
+  const selected = [...powerParts].sort((a, b) => {
+    const typeA = thrustTypeForPart(a);
+    const typeB = thrustTypeForPart(b);
+    const score = (rank[typeB] || 0) - (rank[typeA] || 0);
+    if (score !== 0) return score;
+    return (b.energyOut || 0) - (a.energyOut || 0);
+  })[0];
+
+  return thrustTypeForPart(selected);
 }
 
 function drawGaragePreview(canvas, build, partsById, timeMs = 0) {
@@ -213,445 +298,312 @@ function drawGaragePreview(canvas, build, partsById, timeMs = 0) {
   const t = timeMs / 1000;
 
   const bg = ctx.createLinearGradient(0, 0, 0, height);
-  bg.addColorStop(0, "rgba(63, 119, 145, 0.85)");
-  bg.addColorStop(0.56, "rgba(24, 50, 62, 0.92)");
-  bg.addColorStop(1, "rgba(12, 26, 33, 0.98)");
+  bg.addColorStop(0, "rgba(67, 119, 144, 0.88)");
+  bg.addColorStop(0.58, "rgba(25, 49, 60, 0.92)");
+  bg.addColorStop(1, "rgba(9, 19, 24, 0.98)");
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, width, height);
 
-  const beamShift = Math.sin(t * 0.9) * 28;
-  ctx.fillStyle = "rgba(218, 246, 251, 0.09)";
-  ctx.beginPath();
-  ctx.moveTo(width * 0.22 + beamShift, 0);
-  ctx.lineTo(width * 0.33 + beamShift, 0);
-  ctx.lineTo(width * 0.18 + beamShift - 36, height);
-  ctx.lineTo(width * 0.08 + beamShift - 36, height);
-  ctx.closePath();
-  ctx.fill();
+  ctx.fillStyle = "rgba(201, 236, 241, 0.08)";
+  for (let i = 0; i < 3; i += 1) {
+    const shift = Math.sin(t * 0.8 + i) * 16;
+    ctx.fillRect(width * (0.2 + i * 0.24) + shift, 0, 26, height);
+  }
 
-  for (let y = 20; y < height - 34; y += 26) {
-    ctx.strokeStyle = "rgba(172, 230, 240, 0.1)";
-    ctx.lineWidth = 1;
+  for (let y = 18; y < height; y += 26) {
+    ctx.strokeStyle = "rgba(173, 225, 233, 0.1)";
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(width, y);
     ctx.stroke();
   }
-  for (let x = 24; x < width; x += 26) {
-    ctx.strokeStyle = "rgba(172, 230, 240, 0.1)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
 
-  const floorGrad = ctx.createLinearGradient(0, height - 64, 0, height);
-  floorGrad.addColorStop(0, "rgba(36, 58, 66, 0.2)");
-  floorGrad.addColorStop(1, "rgba(7, 14, 18, 0.9)");
-  ctx.fillStyle = floorGrad;
-  ctx.fillRect(0, height - 64, width, 64);
+  const grouped = groupSelectedParts(build, partsById);
+  const coreParts = grouped.byCategory.core || [];
+  const wingParts = grouped.byCategory.wings || [];
+  const tailParts = grouped.byCategory.tail || [];
+  const warheadParts = grouped.byCategory.warhead || [];
+  const seekerParts = grouped.byCategory.seeker || [];
+  const powerParts = grouped.byCategory.power || [];
 
-  const core = build.slots.core ? partsById[build.slots.core] : null;
-  const wingLeft = build.slots.wingLeft ? partsById[build.slots.wingLeft] : null;
-  const wingRight = build.slots.wingRight ? partsById[build.slots.wingRight] : null;
-  const wingCount = [wingLeft, wingRight].filter(Boolean).length;
-  const wingPart = wingRight || wingLeft;
-  const tail = build.slots.tail ? partsById[build.slots.tail] : null;
-  const warhead = build.slots.warhead ? partsById[build.slots.warhead] : null;
-  const seeker = build.slots.seeker ? partsById[build.slots.seeker] : null;
-  const autopilot = build.slots.autopilot ? partsById[build.slots.autopilot] : null;
-  const link = build.slots.link ? partsById[build.slots.link] : null;
-  const power = build.slots.power ? partsById[build.slots.power] : null;
-  const extra1 = build.slots.extra1 ? partsById[build.slots.extra1] : null;
-  const extra2 = build.slots.extra2 ? partsById[build.slots.extra2] : null;
+  const tuning = normalizeBuildTuning(build?.tuning);
+  const wingLengthScale = tuning.wingLength / 100;
+  const wingSlopeDeg = tuning.wingSlope;
+  const finLengthScale = tuning.finLength / 100;
+  const finHeightScale = tuning.finHeight / 100;
+
+  const materialTier = getDominantMaterial(coreParts);
+  const palette = getMaterialPalette(materialTier);
+  const thrustType = getActivePowerType(powerParts);
 
   const centerX = width * 0.52;
-  const centerY = height * 0.54 + Math.sin(t * 1.9) * 1.5;
-  const weightFactor = clamp((core?.weight || 20) / 36, 0.55, 1.2);
-  const armorFactor = clamp((core?.durability || 80) / 130, 0.55, 1.2);
-  const fuselageLen = 150 + weightFactor * 30;
-  const fuselageH = 24 + armorFactor * 10;
-  const noseLen = warhead ? 28 : seeker ? 22 : 16;
-  const tailX = centerX - fuselageLen * 0.5;
-  const noseBaseX = centerX + fuselageLen * 0.5 - 12;
-  const noseTipX = noseBaseX + noseLen;
-  const wingRootX = centerX - fuselageLen * 0.06;
-  const callouts = [];
+  const centerY = height * 0.56 + Math.sin(t * 1.8) * 1.5;
+  const avgCoreWeight =
+    coreParts.length > 0 ? coreParts.reduce((sum, part) => sum + (part.weight || 0), 0) / coreParts.length : 18;
+  const avgCoreDur =
+    coreParts.length > 0
+      ? coreParts.reduce((sum, part) => sum + (part.durability || 0), 0) / coreParts.length
+      : 52;
 
-  if (!core) {
+  const segmentCount = clamp(coreParts.length || 2, 1, 7);
+  const segmentLen = 30 + clamp(avgCoreWeight * 0.5, 8, 24);
+  const segmentRadius = 10 + clamp(avgCoreDur * 0.055, 2, 14);
+  const segmentGap = 0;
+  const bodyLen = segmentCount * segmentLen + (segmentCount - 1) * segmentGap;
+  const startX = centerX - bodyLen * 0.5;
+  const bodyTop = centerY - segmentRadius;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.32)";
+  ctx.beginPath();
+  ctx.ellipse(centerX + 4, centerY + segmentRadius + 22, bodyLen * 0.6, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (coreParts.length === 0) {
     ctx.save();
-    ctx.strokeStyle = "rgba(231, 246, 247, 0.74)";
-    ctx.setLineDash([7, 5]);
+    ctx.setLineDash([6, 5]);
+    ctx.strokeStyle = "rgba(230, 246, 248, 0.65)";
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(tailX + 18, centerY - fuselageH * 0.45);
-    ctx.lineTo(noseBaseX, centerY - fuselageH * 0.4);
-    ctx.lineTo(noseTipX, centerY);
-    ctx.lineTo(noseBaseX, centerY + fuselageH * 0.4);
-    ctx.lineTo(tailX + 18, centerY + fuselageH * 0.45);
-    ctx.quadraticCurveTo(tailX - 4, centerY, tailX + 18, centerY - fuselageH * 0.45);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(wingRootX - 6, centerY + 2);
-    ctx.lineTo(wingRootX + 46, centerY + 6);
-    ctx.lineTo(wingRootX + 108, centerY + 42);
-    ctx.lineTo(wingRootX + 42, centerY + 34);
-    ctx.stroke();
+    const placeholderGap = 6;
+    for (let i = 0; i < 3; i += 1) {
+      const x = startX + i * (segmentLen + placeholderGap);
+      drawRoundedRect(ctx, x, bodyTop, segmentLen, segmentRadius * 2, segmentRadius);
+      ctx.stroke();
+    }
     ctx.restore();
-
-    ctx.fillStyle = "#e8f4f4";
+    ctx.fillStyle = "rgba(236, 248, 250, 0.95)";
     ctx.font = "600 15px Trebuchet MS";
     ctx.textAlign = "center";
-    ctx.fillText("Core takmadan uçak gövdesi tamamlanmaz", centerX, 34);
-    return;
-  }
-
-  const palette = getAirframePalette(core);
-  const fuselageTop = centerY - fuselageH * 0.52;
-  const fuselageBottom = centerY + fuselageH * 0.46;
-  const fuselageTailX = tailX + 14;
-
-  ctx.fillStyle = "rgba(5, 13, 16, 0.42)";
-  ctx.beginPath();
-  ctx.ellipse(centerX + 8, centerY + 58, 142, 18, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  if (wingPart) {
-    const wingSpanX = 82 + (wingPart.stats?.lift || 0) * 3.4 + wingCount * 10;
-    const wingDropY = 20 + (wingPart.stats?.drag || 0) * 1.6;
-    const wingChord = 30 + (wingPart.stats?.control || 0) * 1.2;
-
-    const wingGrad = ctx.createLinearGradient(
-      wingRootX,
-      centerY + fuselageH * 0.1,
-      wingRootX + wingSpanX,
-      centerY + fuselageH * 0.9,
-    );
-    wingGrad.addColorStop(0, moduleAccent(wingPart, "#d9f4ef"));
-    wingGrad.addColorStop(0.45, moduleColor(wingPart, "#7dd5c7"));
-    wingGrad.addColorStop(1, "rgba(23, 41, 46, 0.85)");
-    ctx.fillStyle = wingGrad;
-    ctx.beginPath();
-    ctx.moveTo(wingRootX - wingChord * 0.42, centerY + fuselageH * 0.08);
-    ctx.lineTo(wingRootX + wingChord * 2.2, centerY + fuselageH * 0.2);
-    ctx.lineTo(wingRootX + wingChord * 1.64 + wingSpanX, centerY + fuselageH * 0.9 + wingDropY);
-    ctx.lineTo(wingRootX + wingChord * 0.16 + wingSpanX * 0.38, centerY + fuselageH * 0.82 + wingDropY * 1.1);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.strokeStyle = "rgba(232, 248, 250, 0.34)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(wingRootX + wingChord * 0.1, centerY + fuselageH * 0.16);
-    ctx.lineTo(wingRootX + wingChord * 1.96 + wingSpanX * 0.82, centerY + fuselageH * 0.82 + wingDropY * 0.78);
-    ctx.stroke();
-
-    callouts.push({
-      text: `Ana Kanat: ${shortName(wingPart.ad)}`,
-      color: moduleColor(wingPart),
-      anchorX: wingRootX + wingChord * 1.2 + wingSpanX * 0.65,
-      anchorY: centerY + fuselageH * 0.88 + wingDropY * 0.56,
-      x: wingRootX + wingChord * 1.1 + wingSpanX * 0.72,
-      y: centerY + fuselageH * 0.95 + wingDropY + 18,
-      align: "left",
-    });
+    ctx.fillText("En az 1 govde silindir parcasi yerlestir", centerX, 34);
   } else {
-    ctx.strokeStyle = "rgba(184, 224, 230, 0.42)";
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(wingRootX + 4, centerY + fuselageH * 0.1);
-    ctx.lineTo(wingRootX + 54, centerY + fuselageH * 0.2);
-    ctx.lineTo(wingRootX + 112, centerY + fuselageH * 0.66);
-    ctx.lineTo(wingRootX + 34, centerY + fuselageH * 0.62);
-    ctx.closePath();
-    ctx.stroke();
-  }
+    const grad = ctx.createLinearGradient(0, bodyTop, 0, bodyTop + segmentRadius * 2);
+    grad.addColorStop(0, palette.top);
+    grad.addColorStop(0.5, palette.mid);
+    grad.addColorStop(1, palette.bottom);
 
-  if (tail) {
-    const tailLift = tail.stats?.stability || 0;
-    const tailRootX = fuselageTailX + 8;
-    const tailSpanX = 54 + tailLift * 1.2;
-    const tailDrop = 16 + tailLift * 0.7;
-    ctx.fillStyle = moduleColor(tail, "#9ec7d1");
-
-    ctx.beginPath();
-    ctx.moveTo(tailRootX, centerY + fuselageH * 0.12);
-    ctx.lineTo(tailRootX + tailSpanX * 0.52, centerY + fuselageH * 0.1);
-    ctx.lineTo(tailRootX + tailSpanX, centerY + fuselageH * 0.16 + tailDrop);
-    ctx.lineTo(tailRootX + tailSpanX * 0.25, centerY + fuselageH * 0.16 + tailDrop * 0.8);
-    ctx.closePath();
+    drawRoundedRect(ctx, startX, bodyTop, bodyLen, segmentRadius * 2, segmentRadius);
+    ctx.fillStyle = grad;
     ctx.fill();
 
+    ctx.strokeStyle = palette.rim;
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
     ctx.beginPath();
-    ctx.moveTo(tailRootX + 6, centerY - fuselageH * 0.04);
-    ctx.lineTo(tailRootX - 10, centerY - fuselageH * 1.05);
-    ctx.lineTo(tailRootX + 24, centerY - fuselageH * 0.46);
-    ctx.closePath();
+    ctx.ellipse(
+      startX + bodyLen * 0.36,
+      centerY - segmentRadius * 0.3,
+      bodyLen * 0.18,
+      segmentRadius * 0.24,
+      0,
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
 
-    callouts.push({
-      text: `${CATEGORY_LABELS.tail}: ${shortName(tail.ad)}`,
-      color: moduleColor(tail),
-      anchorX: tailRootX + 9,
-      anchorY: centerY - fuselageH * 0.78,
-      x: tailRootX - 94,
-      y: centerY - fuselageH - 20,
-      align: "right",
-    });
-  }
-
-  const fuselageGrad = ctx.createLinearGradient(centerX, fuselageTop, centerX, fuselageBottom);
-  fuselageGrad.addColorStop(0, palette.top);
-  fuselageGrad.addColorStop(0.5, palette.mid);
-  fuselageGrad.addColorStop(1, palette.bottom);
-  ctx.fillStyle = fuselageGrad;
-  ctx.strokeStyle = palette.line;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(fuselageTailX + 8, fuselageTop + fuselageH * 0.2);
-  ctx.bezierCurveTo(
-    centerX - fuselageLen * 0.28,
-    fuselageTop - fuselageH * 0.34,
-    centerX + fuselageLen * 0.16,
-    fuselageTop - fuselageH * 0.22,
-    noseBaseX,
-    centerY - fuselageH * 0.32,
-  );
-  ctx.lineTo(noseTipX, centerY - fuselageH * 0.06);
-  ctx.quadraticCurveTo(noseTipX + 3, centerY, noseTipX, centerY + fuselageH * 0.06);
-  ctx.lineTo(noseBaseX, centerY + fuselageH * 0.33);
-  ctx.bezierCurveTo(
-    centerX + fuselageLen * 0.2,
-    fuselageBottom + fuselageH * 0.18,
-    centerX - fuselageLen * 0.3,
-    fuselageBottom + fuselageH * 0.15,
-    fuselageTailX + 14,
-    fuselageBottom,
-  );
-  ctx.quadraticCurveTo(fuselageTailX - 10, centerY + fuselageH * 0.1, fuselageTailX + 8, fuselageTop + fuselageH * 0.2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(255,255,255,0.2)";
-  ctx.beginPath();
-  ctx.moveTo(centerX - fuselageLen * 0.18, fuselageTop + fuselageH * 0.02);
-  ctx.quadraticCurveTo(centerX + fuselageLen * 0.06, fuselageTop - fuselageH * 0.14, noseBaseX - 22, centerY - fuselageH * 0.22);
-  ctx.lineTo(centerX - fuselageLen * 0.08, centerY - fuselageH * 0.22);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "rgba(26, 43, 54, 0.88)";
-  ctx.beginPath();
-  ctx.moveTo(centerX + fuselageLen * 0.02, centerY - fuselageH * 0.42);
-  ctx.quadraticCurveTo(centerX + fuselageLen * 0.22, centerY - fuselageH * 0.5, centerX + fuselageLen * 0.29, centerY - fuselageH * 0.28);
-  ctx.quadraticCurveTo(centerX + fuselageLen * 0.17, centerY - fuselageH * 0.16, centerX + fuselageLen * 0.02, centerY - fuselageH * 0.2);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(193, 228, 236, 0.4)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(centerX + fuselageLen * 0.04, centerY - fuselageH * 0.35);
-  ctx.quadraticCurveTo(centerX + fuselageLen * 0.15, centerY - fuselageH * 0.42, centerX + fuselageLen * 0.24, centerY - fuselageH * 0.3);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(27, 40, 49, 0.72)";
-  ctx.beginPath();
-  ctx.ellipse(centerX + fuselageLen * 0.08, centerY + fuselageH * 0.24, 12, 6.2, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  for (let i = 0; i < 5; i += 1) {
-    const x = centerX - fuselageLen * 0.18 + i * (fuselageLen * 0.14);
-    ctx.strokeStyle = "rgba(28, 44, 53, 0.28)";
-    ctx.lineWidth = 1;
+    ctx.fillStyle = "rgba(24, 39, 48, 0.88)";
     ctx.beginPath();
-    ctx.moveTo(x, centerY - fuselageH * 0.28);
-    ctx.lineTo(x + 5, centerY + fuselageH * 0.26);
-    ctx.stroke();
-  }
+    ctx.ellipse(
+      startX + bodyLen * 0.66,
+      centerY - segmentRadius * 0.12,
+      segmentLen * 0.28,
+      segmentRadius * 0.28,
+      -0.08,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
 
-  ctx.fillStyle = palette.accent;
-  ctx.fillRect(centerX - fuselageLen * 0.04, centerY + fuselageH * 0.04, 26, 3);
-  ctx.fillRect(centerX - fuselageLen * 0.18, centerY + fuselageH * 0.01, 16, 2.5);
+    const noseBaseX = startX + bodyLen;
+    const noseLen = warheadParts.length > 0 ? 34 : seekerParts.length > 0 ? 26 : 18;
+    const noseColor = warheadParts.length > 0 ? "#f48872" : palette.mid;
 
-  callouts.push({
-    text: `${CATEGORY_LABELS.core}: ${shortName(core.ad)}`,
-    color: moduleAccent(core),
-    anchorX: centerX + 4,
-    anchorY: centerY - fuselageH * 0.62,
-    x: centerX - 58,
-    y: centerY - 86,
-    align: "left",
-  });
-
-  if (warhead) {
-    ctx.fillStyle = moduleColor(warhead, "#f48173");
+    ctx.fillStyle = noseColor;
     ctx.beginPath();
-    ctx.moveTo(noseBaseX - 3, centerY - 8.5);
-    ctx.lineTo(noseTipX + 12, centerY);
-    ctx.lineTo(noseBaseX - 3, centerY + 8.5);
+    ctx.moveTo(noseBaseX - 4, centerY - segmentRadius * 0.58);
+    ctx.quadraticCurveTo(noseBaseX + noseLen * 0.72, centerY - segmentRadius * 0.2, noseBaseX + noseLen, centerY);
+    ctx.quadraticCurveTo(noseBaseX + noseLen * 0.72, centerY + segmentRadius * 0.2, noseBaseX - 4, centerY + segmentRadius * 0.58);
     ctx.closePath();
     ctx.fill();
 
-    callouts.push({
-      text: `${CATEGORY_LABELS.warhead}: ${shortName(warhead.ad)}`,
-      color: moduleColor(warhead),
-      anchorX: noseTipX + 4,
-      anchorY: centerY + 1,
-      x: noseTipX + 22,
-      y: centerY + 20,
-      align: "left",
-    });
+    if (seekerParts.length > 0) {
+      const blink = clamp(0.4 + Math.sin(t * 7) * 0.3, 0.2, 0.85);
+      ctx.fillStyle = "#88d9e7";
+      ctx.beginPath();
+      ctx.arc(noseBaseX + noseLen * 0.7, centerY, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = `rgba(235, 250, 252, ${blink})`;
+      ctx.beginPath();
+      ctx.arc(noseBaseX + noseLen * 0.8, centerY - 1, 2.7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (wingParts.length > 0) {
+      const wingRef = wingParts[0];
+      const lift = wingRef?.stats?.lift || 0;
+      const control = wingRef?.stats?.control || 0;
+      const drag = wingRef?.stats?.drag || 0;
+
+      const wingChord = (58 + control * 2.2) * wingLengthScale;
+      const wingThickness = 11 + drag * 1.2;
+      const wingSweep = (30 + lift * 3.4 + wingParts.length * 14) * wingLengthScale;
+      const wingX = startX + bodyLen * 0.62;
+      const wingY = centerY + segmentRadius * 0.55;
+
+      const wingGrad = ctx.createLinearGradient(
+        wingX - wingChord - wingSweep,
+        wingY - wingThickness,
+        wingX,
+        wingY + wingThickness * 2,
+      );
+      wingGrad.addColorStop(0, "rgba(18, 37, 42, 0.86)");
+      wingGrad.addColorStop(0.5, "#7ccfc3");
+      wingGrad.addColorStop(1, "#d9f2ee");
+
+      drawAirfoil(ctx, wingX, wingY, wingChord, wingThickness, wingSweep, wingGrad, "rgba(219, 246, 246, 0.42)", {
+        mirrorX: true,
+        incidenceDeg: wingSlopeDeg,
+      });
+
+      if (wingParts.length > 1) {
+        ctx.globalAlpha = 0.45;
+        drawAirfoil(
+          ctx,
+          wingX - 8,
+          wingY + 8,
+          wingChord * 0.92,
+          wingThickness * 0.8,
+          wingSweep * 0.8,
+          "rgba(160, 215, 208, 0.7)",
+          "rgba(215, 241, 242, 0.42)",
+          {
+            mirrorX: true,
+            incidenceDeg: wingSlopeDeg * 0.92,
+          },
+        );
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = "rgba(199, 233, 237, 0.5)";
+      ctx.beginPath();
+      ctx.moveTo(startX + bodyLen * 0.64, centerY + segmentRadius * 0.58);
+      ctx.lineTo(startX + bodyLen * 0.3, centerY + segmentRadius * 1.25);
+      ctx.lineTo(startX + bodyLen * 0.8, centerY + segmentRadius * 1.2);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (tailParts.length > 0) {
+      const tailRef = tailParts[0];
+      const finLength = clamp((44 + (tailRef?.stats?.stability || 0) * 2.1) * finLengthScale, 26, 130);
+      const finHeight = clamp((24 + (tailRef?.stats?.control || 0) * 2.2) * finHeightScale, 18, 110);
+      const finRootX = startX + 18;
+      const finRootY = centerY + segmentRadius * 0.16;
+      drawFinProfile(
+        ctx,
+        finRootX,
+        finRootY,
+        finLength,
+        finHeight,
+        palette.accent,
+        "rgba(17, 24, 26, 0.44)",
+      );
+    }
+
+    if (thrustType) {
+      const nacelleX = startX + bodyLen * 0.24;
+      const nacelleY = centerY + segmentRadius * 0.55;
+      ctx.fillStyle = "#56646f";
+      drawRoundedRect(ctx, nacelleX, nacelleY, 36, 10, 5);
+      ctx.fill();
+
+      if (thrustType === "electric") {
+        const pulse = clamp(0.35 + Math.sin(t * 8.2) * 0.22, 0.12, 0.78);
+        ctx.fillStyle = `rgba(122, 219, 255, ${pulse})`;
+        ctx.beginPath();
+        ctx.moveTo(startX - 2, centerY + 2);
+        ctx.lineTo(startX - 24, centerY - 6);
+        ctx.lineTo(startX - 26, centerY + 10);
+        ctx.closePath();
+        ctx.fill();
+      } else if (thrustType === "gasoline") {
+        const pulse = clamp(0.46 + Math.sin(t * 10.4) * 0.22, 0.18, 0.78);
+        ctx.fillStyle = `rgba(255, 188, 88, ${pulse})`;
+        ctx.beginPath();
+        ctx.moveTo(startX + 2, centerY + 1);
+        ctx.lineTo(startX - 28 - Math.sin(t * 7) * 4, centerY - 9);
+        ctx.lineTo(startX - 24 - Math.sin(t * 7) * 4, centerY + 12);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(70, 80, 84, 0.24)";
+        ctx.beginPath();
+        ctx.arc(startX - 26, centerY + 2, 7, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        const pulse = clamp(0.55 + Math.sin(t * 12.2) * 0.2, 0.22, 0.9);
+        ctx.fillStyle = `rgba(255, 190, 96, ${pulse})`;
+        ctx.beginPath();
+        ctx.moveTo(startX + 2, centerY + 1);
+        ctx.lineTo(startX - 42 - Math.sin(t * 10) * 6, centerY - 11);
+        ctx.lineTo(startX - 40 - Math.sin(t * 10) * 6, centerY + 14);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = `rgba(140, 223, 255, ${pulse * 0.75})`;
+        ctx.beginPath();
+        ctx.moveTo(startX + 1, centerY + 1);
+        ctx.lineTo(startX - 32 - Math.sin(t * 10) * 4, centerY - 6);
+        ctx.lineTo(startX - 30 - Math.sin(t * 10) * 4, centerY + 9);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
   }
 
-  if (seeker) {
-    const blink = clamp(0.45 + Math.sin(t * 6.2) * 0.3, 0.15, 0.9);
-    ctx.fillStyle = moduleColor(seeker, "#8ed8ea");
-    ctx.beginPath();
-    ctx.arc(noseTipX - 2, centerY, 7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = `rgba(225, 249, 252, ${blink})`;
-    ctx.beginPath();
-    ctx.arc(noseTipX, centerY - 1, 3.3, 0, Math.PI * 2);
-    ctx.fill();
-
-    callouts.push({
-      text: `${CATEGORY_LABELS.seeker}: ${shortName(seeker.ad)}`,
-      color: moduleColor(seeker),
-      anchorX: noseTipX - 2,
-      anchorY: centerY - 2,
-      x: noseTipX + 20,
-      y: centerY - 38,
-      align: "left",
-    });
-  }
-
-  if (autopilot) {
-    ctx.fillStyle = moduleColor(autopilot, "#e8d790");
-    drawRoundedRect(ctx, centerX - 8, centerY - fuselageH * 0.95, 38, 10, 4);
-    ctx.fill();
-    callouts.push({
-      text: `${CATEGORY_LABELS.autopilot}: ${shortName(autopilot.ad)}`,
-      color: moduleColor(autopilot),
-      anchorX: centerX + 10,
-      anchorY: centerY - fuselageH * 0.9,
-      x: centerX + 50,
-      y: centerY - 74,
-      align: "left",
-    });
-  }
-
-  if (link) {
-    const mastX = tailX + 44;
-    ctx.strokeStyle = moduleColor(link, "#a8deea");
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(mastX, centerY - 3);
-    ctx.lineTo(mastX - 7, centerY - 19);
-    ctx.stroke();
-
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(mastX - 7, centerY - 19, 5, -1.35, 0.2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(mastX - 7, centerY - 19, 9, -1.35, 0.2);
-    ctx.stroke();
-
-    callouts.push({
-      text: `${CATEGORY_LABELS.link}: ${shortName(link.ad)}`,
-      color: moduleColor(link),
-      anchorX: mastX - 7,
-      anchorY: centerY - 19,
-      x: mastX - 98,
-      y: centerY - 52,
-      align: "right",
-    });
-  }
-
-  if (power) {
-    const flame = clamp(0.42 + Math.sin(t * 9.4) * 0.2, 0.2, 0.7);
-    const nacelleX = centerX - fuselageLen * 0.02;
-    ctx.fillStyle = moduleColor(power, "#efc47e");
-    drawRoundedRect(ctx, nacelleX, centerY + fuselageH * 0.18, 34, 10, 4);
-    ctx.fill();
-
-    ctx.fillStyle = `rgba(255, 203, 110, ${flame})`;
-    ctx.beginPath();
-    ctx.moveTo(tailX - 4, centerY + 2);
-    ctx.lineTo(tailX - 24 - Math.sin(t * 11.4) * 6, centerY - 7);
-    ctx.lineTo(tailX - 20 - Math.sin(t * 11.4) * 6, centerY + 12);
-    ctx.closePath();
-    ctx.fill();
-
-    callouts.push({
-      text: `${CATEGORY_LABELS.power}: ${shortName(power.ad)}`,
-      color: moduleColor(power),
-      anchorX: nacelleX + 18,
-      anchorY: centerY + fuselageH * 0.32,
-      x: nacelleX + 16,
-      y: centerY + 30,
-      align: "right",
-    });
-  }
-
-  if (extra1) {
-    const x = wingRootX + 72;
-    const y = centerY - fuselageH * 0.72;
-    ctx.fillStyle = moduleColor(extra1, "#8ccbe6");
-    ctx.beginPath();
-    ctx.arc(x, y, 6.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    callouts.push({
-      text: `${CATEGORY_LABELS.extra}: ${shortName(extra1.ad)}`,
-      color: moduleColor(extra1),
-      anchorX: x,
-      anchorY: y,
-      x: x + 14,
-      y: y - 24,
-      align: "left",
-    });
-  }
-
-  if (extra2) {
-    const x = wingRootX + 98;
-    const y = centerY + fuselageH * 0.72;
-    ctx.fillStyle = moduleColor(extra2, "#8ccbe6");
-    ctx.beginPath();
-    ctx.arc(x, y, 6.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    callouts.push({
-      text: `${CATEGORY_LABELS.extra}: ${shortName(extra2.ad)}`,
-      color: moduleColor(extra2),
-      anchorX: x,
-      anchorY: y,
-      x: x + 14,
-      y: y + 12,
-      align: "left",
-    });
-  }
-
-  for (const note of callouts) {
-    drawCallout(ctx, note, width, height);
-  }
-
-  ctx.fillStyle = "rgba(236, 248, 249, 0.93)";
+  ctx.fillStyle = "rgba(236, 248, 250, 0.93)";
   ctx.font = "600 14px Trebuchet MS";
   ctx.textAlign = "left";
-  ctx.fillText(core.ad, 12, 22);
-  ctx.fillStyle = "rgba(211, 234, 237, 0.88)";
+  ctx.fillText("Yan profil kamikaze ucak", 12, 22);
+  ctx.fillStyle = "rgba(211, 234, 237, 0.9)";
   ctx.font = "12px Trebuchet MS";
-  ctx.fillText(`Canlı Uçak Profili (Yandan) • Modül Sayısı ${Object.values(build.slots).filter(Boolean).length}`, 12, 40);
+  ctx.fillText(
+    `Govde: ${coreParts.length} | Kanat Boy ${tuning.wingLength}% | Kanat Egim ${tuning.wingSlope}deg | Fin Y ${tuning.finHeight}%`,
+    12,
+    40,
+  );
+}
+
+function buildLoadoutChips(summary) {
+  if (summary.selectedParts.length === 0) {
+    return `<span class="small">Henuz parca yerlestirilmedi.</span>`;
+  }
+
+  const grouped = summary.selectedParts.reduce((acc, entry) => {
+    const key = entry.part.id;
+    if (!acc[key]) {
+      acc[key] = { part: entry.part, count: 0 };
+    }
+    acc[key].count += 1;
+    return acc;
+  }, {});
+
+  return Object.values(grouped)
+    .map(({ part, count }) => {
+      const label = `${shortName(part.ad, 18)}${count > 1 ? ` x${count}` : ""}`;
+      return `<span class="loadout-chip chip-${part.kategori}">${label}</span>`;
+    })
+    .join("");
 }
 
 export function renderGarageScreen({ mount, appState, manager, audio, saveAll }) {
   const partsById = indexPartsById(appState.parts);
   const playerLevel = appState.save.progression.playerLevel;
+  const testOverrideActive = isTestOverrideProgression(appState.save.progression);
   const nextLevel = getNextPlayableLevel(appState.save.progression, appState.levels.length);
   const levelBudget = appState.levels[nextLevel - 1]?.budgetLimit || 420;
 
@@ -661,6 +613,7 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
   let workingBuild = appState.save.currentBuild
     ? cloneBuild(appState.save.currentBuild)
     : createStarterBuild(appState.parts);
+
   let previewAnimationId = null;
   let previewCanvasRef = null;
 
@@ -693,38 +646,77 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
   }
 
   function getSummary() {
-    return calculateBuildSummary(workingBuild, partsById, levelBudget);
+    return calculateBuildSummary(workingBuild, partsById, levelBudget, {
+      ignoreBudget: testOverrideActive,
+      ignoreEnergy: testOverrideActive,
+    });
   }
 
   function render() {
     stopPreviewAnimation();
     const summary = getSummary();
+    const tuning = summary.tuning;
     const levelInfo = appState.levels[nextLevel - 1];
-    const loadoutChips =
-      summary.selectedParts.length > 0
-        ? summary.selectedParts
-            .map((entry) => {
-              const slotLabel = SLOT_LABELS[entry.slotId] || entry.slotId;
-              return `<span class="loadout-chip chip-${entry.part.kategori}">${slotLabel}: ${shortName(entry.part.ad, 18)}</span>`;
-            })
-            .join("")
-        : `<span class="small">Henüz parça yerleştirilmedi.</span>`;
+    const loadoutChips = buildLoadoutChips(summary);
+
+    const visibleParts = appState.parts
+      .filter((part) => part.kategori === activeCategory)
+      .sort((a, b) => {
+        const materialSort = (MATERIAL_RANK[materialTierForPart(a)] || 0) - (MATERIAL_RANK[materialTierForPart(b)] || 0);
+        if (materialSort !== 0) return materialSort;
+        if (a.unlockLevel !== b.unlockLevel) return a.unlockLevel - b.unlockLevel;
+        return a.cost - b.cost;
+      });
+
+    const budgetRatio = levelBudget > 0 ? Math.round((summary.totals.cost / levelBudget) * 100) : 0;
+    const energyDanger = !testOverrideActive && summary.stats.energyBalance < 0;
+    const budgetDanger = !testOverrideActive && summary.totals.cost > levelBudget;
 
     mount.innerHTML = `
-      <div class="screen-header">
+      <div class="screen-header garage-header">
         <div>
           <h2 class="screen-title">Garaj</h2>
-          <div class="screen-subtitle">Sonraki görev: ${levelInfo?.ad || `Görev ${nextLevel}`} • Bütçe Limiti: ${levelBudget}</div>
+          <div class="screen-subtitle">
+            Sonraki gorev: ${levelInfo?.ad || `Gorev ${nextLevel}`} | Butce Limiti: ${levelBudget}
+            ${testOverrideActive ? " | Test Override: Butce/Enerji kurali pasif" : ""}
+          </div>
         </div>
         <div class="row">
-          <button class="btn-secondary" data-action="back">Ana Menü</button>
+          <button class="btn-secondary" data-action="back">Ana Menu</button>
         </div>
       </div>
 
       <div class="screen-body">
+        <section class="garage-overview">
+          <div class="garage-overview-card ${budgetDanger ? "is-alert" : ""}">
+            <span>Butce Kullanimi</span>
+            <strong>${summary.totals.cost} / ${levelBudget}</strong>
+            <small>%${budgetRatio}</small>
+          </div>
+          <div class="garage-overview-card ${energyDanger ? "is-alert" : ""}">
+            <span>Enerji Dengesi</span>
+            <strong>${summary.stats.energyBalance}</strong>
+            <small>${energyDanger ? "Negatif" : "Dengede"}</small>
+          </div>
+          <div class="garage-overview-card">
+            <span>Pilot Seviyesi</span>
+            <strong>${playerLevel}</strong>
+            <small>Kategori secimi acik</small>
+          </div>
+          <div class="garage-overview-card">
+            <span>Aktif Parca</span>
+            <strong>${summary.totals.selectedCount}</strong>
+            <small>Govde ${summary.totals.coreCount} | Kanat ${summary.totals.wingCount}</small>
+          </div>
+        </section>
+
         <div class="garage-layout">
-          <section class="panel">
-            <h4>Parça Kataloğu</h4>
+          <section class="panel panel-catalog">
+            <div class="panel-head">
+              <h4>Parca Katalogu</h4>
+              <span class="tag">Kademe: Kopuk -> Ahsap -> Kompozit</span>
+            </div>
+            <div class="small garage-helper-note">Kilitli parcalar pilot seviyesine gore acilir. Acik parcalari surukle birak yap.</div>
             <div class="category-tabs">
               ${Object.entries(CATEGORY_LABELS)
                 .map(
@@ -734,21 +726,23 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
                 .join("")}
             </div>
             <div class="part-list">
-              ${appState.parts
-                .filter((part) => part.kategori === activeCategory)
+              ${visibleParts
                 .map((part) => {
                   const unlocked = isUnlocked(part);
+                  const thrust = part.kategori === "power" ? thrustLabel(thrustTypeForPart(part)) : null;
+
                   return `
                     <article class="part-card ${unlocked ? "" : "locked"}" draggable="${unlocked}" data-part-id="${part.id}">
                       <h5>${part.ad}</h5>
                       <p>${part.aciklama}</p>
                       <div class="part-meta">
-                        <span class="tag">Ağırlık: ${part.weight}</span>
-                        <span class="tag">Day.: ${part.durability}</span>
+                        <span class="tag ${materialClassName(part)}">Malzeme: ${materialLabel(part)}</span>
+                        ${thrust ? `<span class="tag ${thrustClassName(part)}">Itki: ${thrust}</span>` : ""}
+                        <span class="tag">Agirlik: ${part.weight}</span>
+                        <span class="tag">Day: ${part.durability}</span>
                         <span class="tag">Maliyet: ${part.cost}</span>
-                        <span class="tag">${rarityLabel(part.rarity)}</span>
                       </div>
-                      <p class="small">${unlocked ? "Sürükleyip slota bırak" : `Kilitli • Seviye ${part.unlockLevel}`}</p>
+                      <p class="small">${unlocked ? "Surukle birak" : `Kilitli | Seviye ${part.unlockLevel}`}</p>
                     </article>
                   `;
                 })
@@ -756,38 +750,35 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
             </div>
           </section>
 
-          <section class="panel">
-            <h4>Tasarım Alanı (Grid + Snap)</h4>
+          <section class="panel panel-build">
+            <div class="panel-head">
+              <h4>Tasarim Alani</h4>
+              <span class="tag">Serbest Grid</span>
+            </div>
             <div class="garage-preview-wrap">
               <canvas id="garage-preview-canvas" class="garage-preview-canvas"></canvas>
               <div class="garage-preview-caption">
-                <span>Canlı Önizleme (Yandan)</span>
-                <span>Parça: ${summary.selectedParts.length}</span>
-                <span>Ağırlık: ${summary.totals.weight.toFixed(1)}</span>
+                <span>Yan Profil Onizleme</span>
+                <span>Parca: ${summary.totals.selectedCount}</span>
+                <span>Govde: ${summary.totals.coreCount}</span>
+                <span>Kanat: ${summary.totals.wingCount}</span>
+                <span>Agirlik: ${summary.totals.weight.toFixed(1)}</span>
                 <span>Enerji: ${summary.stats.energyBalance}</span>
-                <span>Stabilite: ${summary.stats.stabilityScore}</span>
               </div>
               <div class="garage-preview-loadout">${loadoutChips}</div>
             </div>
+
             <div class="garage-grid">
               ${Array.from({ length: 3 })
                 .map((_, row) => {
                   return Array.from({ length: 5 })
                     .map((__, col) => {
                       const slot = slotAt(row, col);
-                      if (!slot) {
-                        return `<div class="slot" style="opacity:.15; border-style:dashed;"></div>`;
-                      }
-
-                      const partId = workingBuild.slots[slot.id];
+                      const partId = slot ? workingBuild.slots[slot.id] : null;
                       const part = partId ? partsById[partId] : null;
-                      const requiredClass = slot.required ? "required" : "";
-                      const filledClass = part ? "filled" : "";
-
                       return `
-                        <div class="slot ${requiredClass} ${filledClass}" data-slot-id="${slot.id}">
-                          <span class="slot-name">${slot.label}</span>
-                          <span class="slot-part">${part ? part.ad : "Boş"}</span>
+                        <div class="slot ${part ? "filled" : "empty"}" data-slot-id="${slot?.id || ""}">
+                          <span class="slot-part">${part ? shortName(part.ad, 16) : ""}</span>
                         </div>
                       `;
                     })
@@ -795,20 +786,44 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
                 })
                 .join("")}
             </div>
-            <div class="small" style="margin-top:8px;">İpucu: Dolu slota tıklayarak parçayı çıkarabilirsin.</div>
+
+            <div class="small garage-grid-note">Istedigin parcayi istedigin hucreye birak. Dolu hucreye tiklayarak parcayi cikart.</div>
           </section>
 
-          <section class="panel">
-            <h4>Drone İstatistikleri</h4>
+          <section class="panel panel-stats">
+            <div class="panel-head">
+              <h4>Ucak Istatistikleri</h4>
+              <span class="tag">Canli Hesaplama</span>
+            </div>
+            <div class="tuning-controls">
+              <h5>Aerodinamik Ayar</h5>
+              <div class="tuning-grid">
+                <label class="tuning-item">Kanat Uzunlugu <strong>${tuning.wingLength}%</strong>
+                  <input type="range" min="10" max="160" step="1" value="${tuning.wingLength}" data-tuning="wingLength" />
+                </label>
+                <label class="tuning-item">Kanat Egimi <strong>${tuning.wingSlope}deg</strong>
+                  <input type="range" min="-20" max="22" step="1" value="${tuning.wingSlope}" data-tuning="wingSlope" />
+                </label>
+                <label class="tuning-item">Fin Uzunlugu <strong>${tuning.finLength}%</strong>
+                  <input type="range" min="70" max="170" step="1" value="${tuning.finLength}" data-tuning="finLength" />
+                </label>
+                <label class="tuning-item">Fin Yuksekligi <strong>${tuning.finHeight}%</strong>
+                  <input type="range" min="70" max="175" step="1" value="${tuning.finHeight}" data-tuning="finHeight" />
+                </label>
+              </div>
+              <div class="small garage-helper-note">Kanat uzunluk ve egim lift-drag oranini, fin uzunluk ve yukseklik manevrayi etkiler.</div>
+            </div>
             <div class="stats-table">
-              <div class="stats-item"><span>Bütçe</span><strong class="${summary.totals.cost > levelBudget ? "badge-danger" : "badge-ok"}">${summary.totals.cost} / ${levelBudget}</strong></div>
-              <div class="stats-item"><span>Ağırlık</span><strong>${summary.totals.weight.toFixed(1)}</strong></div>
-              <div class="stats-item"><span>Dayanıklılık</span><strong>${Math.round(summary.totals.durability)}</strong></div>
+              <div class="stats-item"><span>Butce</span><strong class="${budgetDanger ? "badge-danger" : "badge-ok"}">${summary.totals.cost} / ${levelBudget}</strong></div>
+              <div class="stats-item"><span>Toplam Agirlik</span><strong>${summary.totals.weight.toFixed(1)}</strong></div>
+              <div class="stats-item"><span>Toplam Dayaniklilik</span><strong>${Math.round(summary.totals.durability)}</strong></div>
               <div class="stats-item"><span>Stabilite</span><strong>${summary.stats.stabilityScore}</strong></div>
               <div class="stats-item"><span>Kontrol</span><strong>${summary.stats.controlScore}</strong></div>
+              <div class="stats-item"><span>Manevra</span><strong>${summary.stats.maneuverScore}</strong></div>
               <div class="stats-item"><span>Lift/Drag</span><strong>${summary.stats.liftScore}</strong></div>
-              <div class="stats-item"><span>Enerji Dengesi</span><strong class="${summary.stats.energyBalance < 0 ? "badge-danger" : "badge-ok"}">${summary.stats.energyBalance}</strong></div>
-              <div class="stats-item"><span>Kilit Kolaylığı</span><strong>${summary.stats.lockEase}</strong></div>
+              <div class="stats-item"><span>Lift/Drag Orani</span><strong>${summary.stats.liftToDragRatio}</strong></div>
+              <div class="stats-item"><span>Enerji Dengesi</span><strong class="${energyDanger ? "badge-danger" : "badge-ok"}">${summary.stats.energyBalance}</strong></div>
+              <div class="stats-item"><span>Kilit Kolayligi</span><strong>${summary.stats.lockEase}</strong></div>
               <div class="stats-item"><span>Hasar</span><strong>${summary.stats.damageScore}</strong></div>
             </div>
 
@@ -817,10 +832,10 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
             ${alertMessage ? `<div class="alert alert-info">${alertMessage}</div>` : ""}
 
             <div class="garage-actions">
-              <button class="btn-secondary" data-action="test-flight" ${summary.validation.isValid ? "" : "disabled"}>Test Uçuşu</button>
+              <button class="btn-secondary" data-action="test-flight" ${summary.validation.isValid ? "" : "disabled"}>Test Ucusu</button>
               <button class="btn-secondary" data-action="save-build">Kaydet</button>
-              <button class="btn-secondary" data-action="load-build">Yükle</button>
-              <button class="btn" data-action="start-mission" ${summary.validation.isValid ? "" : "disabled"}>Göreve Git</button>
+              <button class="btn-secondary" data-action="load-build">Yukle</button>
+              <button class="btn" data-action="start-mission" ${summary.validation.isValid ? "" : "disabled"}>Goreve Git</button>
             </div>
           </section>
         </div>
@@ -853,8 +868,8 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
         const partId = event.dataTransfer.getData("text/plain");
         const part = partsById[partId];
 
-        if (!part || !isUnlocked(part)) {
-          alertMessage = "Bu parça henüz kilitli.";
+        if (!slotId || !part || !isUnlocked(part)) {
+          alertMessage = "Bu parca kilitli ya da gecersiz.";
           render();
           return;
         }
@@ -867,7 +882,7 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
         }
 
         workingBuild = result.build;
-        alertMessage = `${part.ad} -> ${SLOT_DEFINITIONS.find((slot) => slot.id === slotId)?.label}`;
+        alertMessage = `${part.ad} eklendi.`;
         audio.click();
         render();
       });
@@ -885,9 +900,9 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
     const slot = event.target.closest(".slot[data-slot-id]");
     if (slot) {
       const slotId = slot.dataset.slotId;
-      if (workingBuild.slots[slotId]) {
+      if (slotId && workingBuild.slots[slotId]) {
         workingBuild = removePartFromBuild(workingBuild, slotId);
-        alertMessage = `${SLOT_DEFINITIONS.find((item) => item.id === slotId)?.label} boşaltıldı.`;
+        alertMessage = "Parca kaldirildi.";
         audio.click();
         render();
       }
@@ -911,7 +926,7 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
       audio.click();
       appState.save.currentBuild = cloneBuild(workingBuild);
       saveAll();
-      alertMessage = "Tasarım kaydedildi.";
+      alertMessage = "Tasarim kaydedildi.";
       render();
       return;
     }
@@ -919,10 +934,10 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
     if (action === "load-build") {
       audio.click();
       if (!appState.save.currentBuild) {
-        alertMessage = "Kayıtlı bir tasarım bulunamadı.";
+        alertMessage = "Kayitli tasarim bulunamadi.";
       } else {
         workingBuild = cloneBuild(appState.save.currentBuild);
-        alertMessage = "Kayıtlı tasarım yüklendi.";
+        alertMessage = "Kayitli tasarim yuklendi.";
       }
       render();
       return;
@@ -944,7 +959,31 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
     }
   };
 
+  const onInput = (event) => {
+    const slider = event.target.closest("input[data-tuning]");
+    if (!slider) {
+      return;
+    }
+
+    const key = slider.dataset.tuning;
+    const nextValue = Number(slider.value);
+    if (!key || !Number.isFinite(nextValue)) {
+      return;
+    }
+
+    const previous = workingBuild.tuning || {};
+    workingBuild = cloneBuild({
+      ...workingBuild,
+      tuning: {
+        ...previous,
+        [key]: nextValue,
+      },
+    });
+    render();
+  };
+
   mount.addEventListener("click", onClick);
+  mount.addEventListener("input", onInput);
 
   render();
 
@@ -952,6 +991,7 @@ export function renderGarageScreen({ mount, appState, manager, audio, saveAll })
     destroy() {
       stopPreviewAnimation();
       mount.removeEventListener("click", onClick);
+      mount.removeEventListener("input", onInput);
     },
   };
 }

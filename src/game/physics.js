@@ -1,6 +1,13 @@
 import { summarizeFromDurabilityMap } from "../systems/buildSystem.js";
 
 const GRAVITY = 116;
+const BASE_THRUST_PER_ENERGY = 3.15;
+const THRUST_MULTIPLIER_BY_TYPE = {
+  electric: 1.38,
+  gasoline: 1.82,
+  jet: 2.28,
+};
+const EXPLOSION_TTL = 0.62;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -33,10 +40,94 @@ function getImpactSpeed(drone) {
   return Math.hypot(drone.vx, drone.vy);
 }
 
+function inferPowerType(part) {
+  if (!part) return null;
+  if (part.thrustType) return part.thrustType;
+  if ((part.energyOut || 0) >= 6) return "jet";
+  if ((part.energyOut || 0) >= 3.5) return "gasoline";
+  return "electric";
+}
+
+function getThrustMultiplier(state) {
+  const activePowerParts = Object.values(state.partDurabilityMap).filter(
+    (part) => !part.detached && part.kategori === "power",
+  );
+  if (activePowerParts.length === 0) {
+    return 1;
+  }
+
+  return activePowerParts.reduce((maxMultiplier, part) => {
+    const type = inferPowerType(part);
+    const candidate = THRUST_MULTIPLIER_BY_TYPE[type] || 1;
+    return Math.max(maxMultiplier, candidate);
+  }, 1);
+}
+
+function getWarheadPowerScale(state) {
+  const activeWarheads = Object.values(state.partDurabilityMap).filter(
+    (part) => !part.detached && part.kategori === "warhead",
+  );
+
+  if (activeWarheads.length === 0) {
+    return 1;
+  }
+
+  const damageRadiusScore = Math.max(0, Number(state.liveSummary?.stats?.damageRadius) || 0);
+  const countBonus = Math.min(0.32, activeWarheads.length * 0.16);
+  const statBonus = Math.min(0.7, damageRadiusScore * 0.07);
+  return 1.18 + countBonus + statBonus;
+}
+
 function materialMultiplier(material) {
   if (material === "metal") return 1.25;
   if (material === "beton") return 1.5;
   return 1;
+}
+
+function getMissionStarsFromDamagePercent(percent) {
+  const safePercent = clamp(Number(percent) || 0, 0, 100);
+  if (safePercent >= 90) return 3;
+  if (safePercent >= 75) return 2;
+  if (safePercent >= 60) return 1;
+  return 0;
+}
+
+function refreshMissionRating(state) {
+  const totalDurability = Math.max(0, Number(state.totalTargetDurability) || 0);
+  if (totalDurability <= 0) {
+    state.targetDamageDealt = 0;
+    state.targetDamagePercent = 100;
+    state.missionStars = 3;
+    return;
+  }
+
+  const remainingDurability = state.targets.reduce((sum, target) => {
+    return sum + Math.max(0, Number(target.durability) || 0);
+  }, 0);
+
+  const dealt = clamp(totalDurability - remainingDurability, 0, totalDurability);
+  const percent = clamp((dealt / totalDurability) * 100, 0, 100);
+
+  state.targetDamageDealt = Math.round(dealt * 10) / 10;
+  state.targetDamagePercent = Math.round(percent * 10) / 10;
+  state.missionStars = getMissionStarsFromDamagePercent(percent);
+}
+
+function finalizeMissionByDamage(state) {
+  if (state.status === "active" || state.missionResolved) {
+    return;
+  }
+
+  refreshMissionRating(state);
+  const passed = state.missionStars >= 1;
+  state.status = passed ? "success" : "fail";
+  state.missionResolved = true;
+  addEvent(state, {
+    type: passed ? "missionSuccess" : "missionFail",
+    reason: "damageThreshold",
+    damagePercent: state.targetDamagePercent,
+    stars: state.missionStars,
+  });
 }
 
 function addEvent(state, event) {
@@ -85,7 +176,7 @@ function applyImpactDamage(state, impact) {
   }
 }
 
-function applyExplosionDamage(state, x, y, radius) {
+function applyExplosionDamage(state, x, y, radius, powerScale = 1) {
   for (const obstacle of state.obstacles) {
     if (obstacle.destroyed) continue;
     const center = { x: obstacle.x + obstacle.width / 2, y: obstacle.y + obstacle.height / 2 };
@@ -93,7 +184,7 @@ function applyExplosionDamage(state, x, y, radius) {
     const maxDist = radius + Math.max(obstacle.width, obstacle.height) * 0.5;
     if (dist > maxDist) continue;
 
-    const damage = (1 - dist / maxDist) * 120;
+    const damage = (1 - dist / maxDist) * 130 * powerScale;
     obstacle.durability -= damage;
     if (obstacle.durability <= 0) {
       obstacle.destroyed = true;
@@ -106,7 +197,7 @@ function applyExplosionDamage(state, x, y, radius) {
     const dist = distance({ x, y }, target);
     if (dist > radius + target.radius) continue;
 
-    const damage = (1 - dist / (radius + target.radius)) * 180;
+    const damage = (1 - dist / (radius + target.radius)) * 190 * powerScale;
     target.durability -= damage;
     if (target.durability <= 0) {
       target.destroyed = true;
@@ -123,16 +214,22 @@ function triggerExplosion(state, reason = "impact") {
     return;
   }
 
-  const radius = clamp(26 + state.liveSummary.stats.damageRadius * 16, 20, 160);
+  const damageRadiusScore = Math.max(0, Number(state.liveSummary?.stats?.damageRadius) || 0);
+  const warheadPowerScale = getWarheadPowerScale(state);
+  const blastScale = 0.88 + warheadPowerScale * 0.24;
+  const radius = clamp((30 + damageRadiusScore * 18) * blastScale, 24, 240);
   state.explosion = {
     x: state.drone.x,
     y: state.drone.y,
     radius,
-    ttl: 0.45,
+    ttl: EXPLOSION_TTL,
+    ttlMax: EXPLOSION_TTL,
+    powerScale: warheadPowerScale,
   };
   state.drone.destroyed = true;
-  addEvent(state, { type: "explosion", reason, radius });
-  applyExplosionDamage(state, state.drone.x, state.drone.y, radius);
+  state.lastExplosionAt = state.time;
+  addEvent(state, { type: "explosion", reason, radius, powerScale: warheadPowerScale });
+  applyExplosionDamage(state, state.drone.x, state.drone.y, radius, warheadPowerScale);
 }
 
 function collisionWithObstacles(state) {
@@ -294,6 +391,16 @@ function advanceExplosion(state, dt) {
 export function createMissionState({ level, buildSummary, durabilityMap, canvasSize }) {
   // Seviye + build verisini fizik döngüsünün çalışacağı tek bir durum nesnesine çevirir.
   const launchPoint = level.launchPoint || { x: 140, y: 370 };
+  const targets = deepCopy(level.targets || []).map((item) => ({
+    ...item,
+    radius: item.radius || 22,
+    durability: item.durability,
+    maxDurability: item.durability,
+    destroyed: false,
+  }));
+  const totalTargetDurability = targets.reduce((sum, target) => {
+    return sum + Math.max(0, Number(target.maxDurability) || 0);
+  }, 0);
 
   const initialHealth = Math.max(80, buildSummary.totals.durability * 0.62);
 
@@ -315,18 +422,19 @@ export function createMissionState({ level, buildSummary, durabilityMap, canvasS
       maxHealth: initialHealth,
       launched: false,
       destroyed: false,
+      throttle: 0.65,
     },
     obstacles: deepCopy(level.obstacles || []).map((item) => ({
       ...item,
       durability: item.durability,
       destroyed: false,
     })),
-    targets: deepCopy(level.targets || []).map((item) => ({
-      ...item,
-      radius: item.radius || 22,
-      durability: item.durability,
-      destroyed: false,
-    })),
+    targets,
+    totalTargetDurability: Math.round(totalTargetDurability * 10) / 10,
+    targetDamageDealt: 0,
+    targetDamagePercent: totalTargetDurability > 0 ? 0 : 100,
+    missionStars: totalTargetDurability > 0 ? 0 : 3,
+    missionResolved: false,
     bonusItems: (level.bonusItems || []).map((item) => ({ ...item, collected: false })),
     objectives: deepCopy(level.objectives || []),
     wind: {
@@ -347,6 +455,7 @@ export function createMissionState({ level, buildSummary, durabilityMap, canvasS
     collectedBonus: 0,
     autopilotMode: "off",
     explosion: null,
+    lastExplosionAt: null,
     status: "active",
     events: [],
   };
@@ -359,12 +468,13 @@ export function launchDrone(state, { powerPercent = 65, angleDeg = -20 }) {
 
   const power = clamp(powerPercent, 15, 100);
   const angle = (clamp(angleDeg, -80, 20) * Math.PI) / 180;
-  const speed = 130 + power * 1.7;
+  const speed = 150 + power * 2.55;
 
   state.drone.launched = true;
   state.drone.angle = angle;
   state.drone.vx = Math.cos(angle) * speed;
   state.drone.vy = Math.sin(angle) * speed;
+  state.drone.throttle = power / 100;
   addEvent(state, { type: "launch", power, angleDeg });
 }
 
@@ -412,12 +522,6 @@ function updateObjectives(state) {
   });
 
   state.objectiveProgress = progress;
-  const mandatory = progress.filter((item) => !item.optional);
-
-  if (state.status === "active" && mandatory.length > 0 && mandatory.every((item) => item.done)) {
-    state.status = "success";
-    addEvent(state, { type: "missionSuccess" });
-  }
 }
 
 function updateScore(state) {
@@ -431,6 +535,8 @@ export function stepPhysics(state, dt, inputPitch = 0) {
   if (state.status !== "active") {
     advanceExplosion(state, dt);
     updateObjectives(state);
+    refreshMissionRating(state);
+    finalizeMissionByDamage(state);
     updateScore(state);
     return state;
   }
@@ -451,7 +557,8 @@ export function stepPhysics(state, dt, inputPitch = 0) {
 
     const relVx = drone.vx - state.wind.x;
     const relVy = drone.vy - state.wind.y;
-    const dragCoefficient = 0.11 + Math.max(0, stats.drag) * 0.005;
+    const dragBase = Number.isFinite(stats.effectiveDrag) ? stats.effectiveDrag : Math.max(0, stats.drag);
+    const dragCoefficient = 0.11 + Math.max(0, dragBase) * 0.005;
 
     drone.vx += -relVx * dragCoefficient * dt;
     drone.vy += -relVy * dragCoefficient * dt;
@@ -460,7 +567,10 @@ export function stepPhysics(state, dt, inputPitch = 0) {
     drone.vx += -Math.sin(drone.angle) * liftStrength * dt;
     drone.vy += -Math.cos(drone.angle) * liftStrength * dt;
 
-    const thrust = Math.max(0, state.liveSummary.stats.energyBalance) * 1.5;
+    const thrustMultiplier = getThrustMultiplier(state);
+    const throttleFactor = clamp(0.52 + (drone.throttle || 0.65) * 0.95, 0.52, 1.48);
+    const thrust =
+      Math.max(0, state.liveSummary.stats.energyBalance) * BASE_THRUST_PER_ENERGY * thrustMultiplier * throttleFactor;
     drone.vx += Math.cos(drone.angle) * thrust * dt;
     drone.vy += Math.sin(drone.angle) * thrust * dt;
 
@@ -497,6 +607,18 @@ export function stepPhysics(state, dt, inputPitch = 0) {
 
   advanceExplosion(state, dt);
   updateObjectives(state);
+  refreshMissionRating(state);
+
+  if (state.status === "active" && state.targetDamagePercent >= 100) {
+    state.status = "success";
+  }
+
+  if (state.status === "active" && state.drone.destroyed && !state.explosion) {
+    state.status = "fail";
+    addEvent(state, { type: "missionFail", reason: "destroyed" });
+  }
+
+  finalizeMissionByDamage(state);
 
   if (state.status === "success" && state.explosion) {
     state.explosion = null;

@@ -1,12 +1,15 @@
-export function createScreenManager({ root, appState, systems, audio, saveAll }) {
+﻿export function createScreenManager({ root, appState, systems, audio, saveAll }) {
   const registry = new Map();
   let currentScreen = null;
 
   root.innerHTML = `
     <div class="topbar">
-      <div>
-        <div class="brand">Angry Wings</div>
-        <div class="small">Arcade görev simülasyonu (TR)</div>
+      <div class="brand-lockup">
+        <div class="brand-badge">AW</div>
+        <div>
+          <div class="brand">Angry Wings</div>
+          <div class="small topbar-subline">Kamikaze drone gorev komuta merkezi</div>
+        </div>
       </div>
       <div class="meta" id="topbar-meta"></div>
     </div>
@@ -19,13 +22,19 @@ export function createScreenManager({ root, appState, systems, audio, saveAll })
   function updateTopbar() {
     const progression = appState.save.progression;
     const unlocked = progression.unlockedLevels.length;
-    const completed = Object.keys(progression.completedLevels || {}).length;
+    const completedEntries = Object.entries(progression.completedLevels || {});
+    const completed = completedEntries.length;
+    const bestScore = completedEntries.reduce((maxScore, entry) => {
+      const score = Number(entry[1]) || 0;
+      return Math.max(maxScore, score);
+    }, 0);
 
     metaEl.innerHTML = `
-      <span class="tag">Pilot Seviyesi: ${progression.playerLevel}</span>
-      <span class="tag">Kredi: ${progression.credits}</span>
-      <span class="tag">Açık Görev: ${unlocked}</span>
-      <span class="tag">Tamamlanan: ${completed}</span>
+      <span class="top-chip top-chip-level">Pilot Lv ${progression.playerLevel}</span>
+      <span class="top-chip top-chip-credits">Kredi ${progression.credits}</span>
+      <span class="top-chip">Gorev ${completed}/${appState.levels.length}</span>
+      <span class="top-chip">Acik ${unlocked}</span>
+      <span class="top-chip">En Iyi ${Math.round(bestScore)}</span>
     `;
   }
 
@@ -44,7 +53,7 @@ export function createScreenManager({ root, appState, systems, audio, saveAll })
   function show(name, params = {}) {
     const factory = registry.get(name);
     if (!factory) {
-      throw new Error(`Ekran bulunamadı: ${name}`);
+      throw new Error(`Ekran bulunamadi: ${name}`);
     }
 
     clearScreen();

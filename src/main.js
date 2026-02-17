@@ -32,12 +32,42 @@ function normalizeBuild(rawBuild) {
     return base;
   }
 
+  const legacyToGrid = {
+    wingLeft: "cell-1-0",
+    tail: "cell-1-1",
+    core: "cell-1-2",
+    warhead: "cell-1-3",
+    wingRight: "cell-1-4",
+    extra1: "cell-0-1",
+    seeker: "cell-0-2",
+    extra2: "cell-0-3",
+    link: "cell-2-1",
+    autopilot: "cell-2-2",
+    power: "cell-2-3",
+  };
+
+  const normalizedSlots = { ...base.slots };
+  const knownKeys = new Set(Object.keys(normalizedSlots));
+
+  for (const [key, value] of Object.entries(rawBuild.slots || {})) {
+    if (!value) continue;
+    if (knownKeys.has(key)) {
+      normalizedSlots[key] = value;
+      continue;
+    }
+    const mapped = legacyToGrid[key];
+    if (mapped && knownKeys.has(mapped) && !normalizedSlots[mapped]) {
+      normalizedSlots[mapped] = value;
+    }
+  }
+
   return {
     ...base,
     ...rawBuild,
-    slots: {
-      ...base.slots,
-      ...(rawBuild.slots || {}),
+    slots: normalizedSlots,
+    tuning: {
+      ...(base.tuning || {}),
+      ...(rawBuild.tuning || {}),
     },
   };
 }

@@ -1,4 +1,6 @@
 const SAVE_KEY = "angry_wings_save_v1";
+const TEST_PLAYER_LEVEL = 100;
+const TEST_CREDITS = 99999999;
 
 export function createDefaultSave() {
   return {
@@ -7,10 +9,10 @@ export function createDefaultSave() {
       language: "tr",
     },
     progression: {
-      playerLevel: 1,
+      playerLevel: TEST_PLAYER_LEVEL,
       unlockedLevels: [1],
       completedLevels: {},
-      credits: 0,
+      credits: TEST_CREDITS,
     },
     currentBuild: null,
   };
@@ -24,7 +26,7 @@ export function loadGame() {
     }
     const parsed = JSON.parse(raw);
     const base = createDefaultSave();
-    return {
+    const mergedSave = {
       ...base,
       ...parsed,
       settings: {
@@ -36,6 +38,15 @@ export function loadGame() {
         ...(parsed.progression || {}),
       },
     };
+    mergedSave.progression.playerLevel = Math.max(
+      TEST_PLAYER_LEVEL,
+      Number(mergedSave.progression.playerLevel) || 0,
+    );
+    mergedSave.progression.credits = Math.max(
+      TEST_CREDITS,
+      Number(mergedSave.progression.credits) || 0,
+    );
+    return mergedSave;
   } catch (error) {
     console.warn("Kayıt okunamadı, varsayılan yükleniyor:", error);
     return createDefaultSave();
