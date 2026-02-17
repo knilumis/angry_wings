@@ -1,0 +1,29 @@
+{
+  "id": "level08",
+  "ad": "Seviye 08 - Sert Fırtına",
+  "aciklama": "Güçlü ters rüzgarda radar zincirini kır.",
+  "launchPoint": { "x": 130, "y": 355 },
+  "obstacles": [
+    { "id": "o1", "x": 620, "y": 480, "width": 120, "height": 100, "material": "metal", "durability": 180 },
+    { "id": "o2", "x": 760, "y": 430, "width": 110, "height": 150, "material": "beton", "durability": 250 },
+    { "id": "o3", "x": 910, "y": 410, "width": 90, "height": 170, "material": "beton", "durability": 260 },
+    { "id": "o4", "x": 1030, "y": 470, "width": 120, "height": 110, "material": "metal", "durability": 190 }
+  ],
+  "targets": [
+    { "id": "t1", "x": 680, "y": 450, "radius": 23, "durability": 106, "targetType": "radar", "isObjective": true },
+    { "id": "t2", "x": 815, "y": 390, "radius": 24, "durability": 116, "targetType": "radar", "isObjective": true },
+    { "id": "t3", "x": 955, "y": 365, "radius": 24, "durability": 120, "targetType": "radar", "isObjective": true },
+    { "id": "t4", "x": 1090, "y": 430, "radius": 24, "durability": 114, "targetType": "generator", "isObjective": true }
+  ],
+  "bonusItems": [
+    { "id": "b1", "x": 860, "y": 230, "radius": 13 }
+  ],
+  "decorations": [],
+  "objectives": [
+    { "id": "obj1", "text": "3 radarı yok et", "type": "destroyType", "targetType": "radar", "count": 3 },
+    { "id": "obj2", "text": "Toplam 4 hedefi yok et", "type": "destroyTargets", "count": 4 }
+  ],
+  "budgetLimit": 620,
+  "wind": { "x": -1.2, "y": 0.2 },
+  "timeLimit": 82
+}

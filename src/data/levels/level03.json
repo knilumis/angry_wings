@@ -1,0 +1,27 @@
+{
+  "id": "level03",
+  "ad": "Seviye 03 - Rüzgar Koridoru",
+  "aciklama": "Çapraz rüzgarda radar zincirini kır.",
+  "launchPoint": { "x": 120, "y": 350 },
+  "obstacles": [
+    { "id": "o1", "x": 600, "y": 500, "width": 140, "height": 80, "material": "wood", "durability": 85 },
+    { "id": "o2", "x": 760, "y": 450, "width": 110, "height": 130, "material": "metal", "durability": 130 },
+    { "id": "o3", "x": 940, "y": 420, "width": 90, "height": 160, "material": "wood", "durability": 95 }
+  ],
+  "targets": [
+    { "id": "t1", "x": 650, "y": 470, "radius": 23, "durability": 86, "targetType": "radar", "isObjective": true },
+    { "id": "t2", "x": 810, "y": 420, "radius": 23, "durability": 88, "targetType": "radar", "isObjective": true },
+    { "id": "t3", "x": 985, "y": 380, "radius": 24, "durability": 92, "targetType": "radar", "isObjective": true }
+  ],
+  "bonusItems": [
+    { "id": "b1", "x": 720, "y": 280, "radius": 13 },
+    { "id": "b2", "x": 910, "y": 250, "radius": 13 }
+  ],
+  "decorations": [],
+  "objectives": [
+    { "id": "obj1", "text": "3 radarı devre dışı bırak", "type": "destroyType", "targetType": "radar", "count": 3 }
+  ],
+  "budgetLimit": 390,
+  "wind": { "x": 1.1, "y": -0.15 },
+  "timeLimit": 74
+}

@@ -1,0 +1,26 @@
+{
+  "id": "level02",
+  "ad": "Seviye 02 - Çift Kule",
+  "aciklama": "Metal bloklarla korunan kuleleri devre dışı bırak.",
+  "launchPoint": { "x": 125, "y": 355 },
+  "obstacles": [
+    { "id": "o1", "x": 640, "y": 470, "width": 90, "height": 110, "material": "metal", "durability": 120 },
+    { "id": "o2", "x": 770, "y": 420, "width": 90, "height": 160, "material": "wood", "durability": 90 },
+    { "id": "o3", "x": 860, "y": 500, "width": 120, "height": 80, "material": "wood", "durability": 85 }
+  ],
+  "targets": [
+    { "id": "t1", "x": 685, "y": 438, "radius": 22, "durability": 82, "targetType": "tower", "isObjective": true },
+    { "id": "t2", "x": 815, "y": 388, "radius": 24, "durability": 90, "targetType": "radar", "isObjective": true },
+    { "id": "t3", "x": 930, "y": 470, "radius": 23, "durability": 76, "targetType": "generator", "isObjective": true }
+  ],
+  "bonusItems": [
+    { "id": "b1", "x": 520, "y": 280, "radius": 13 }
+  ],
+  "decorations": [],
+  "objectives": [
+    { "id": "obj1", "text": "3 hedefi yok et", "type": "destroyTargets", "count": 3 }
+  ],
+  "budgetLimit": 360,
+  "wind": { "x": 0.4, "y": -0.1 },
+  "timeLimit": 72
+}

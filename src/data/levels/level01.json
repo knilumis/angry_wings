@@ -1,0 +1,25 @@
+{
+  "id": "level01",
+  "ad": "Seviye 01 - Isınma Vuruşu",
+  "aciklama": "Eğitim sahasında iki hedefi yok et.",
+  "launchPoint": { "x": 120, "y": 360 },
+  "obstacles": [
+    { "id": "o1", "x": 680, "y": 440, "width": 80, "height": 140, "material": "wood", "durability": 80 },
+    { "id": "o2", "x": 760, "y": 500, "width": 120, "height": 80, "material": "wood", "durability": 70 }
+  ],
+  "targets": [
+    { "id": "t1", "x": 725, "y": 410, "radius": 24, "durability": 70, "targetType": "radar", "isObjective": true },
+    { "id": "t2", "x": 835, "y": 470, "radius": 24, "durability": 70, "targetType": "generator", "isObjective": true }
+  ],
+  "bonusItems": [
+    { "id": "b1", "x": 560, "y": 320, "radius": 13 }
+  ],
+  "decorations": [],
+  "objectives": [
+    { "id": "obj1", "text": "2 hedefi yok et", "type": "destroyTargets", "count": 2 },
+    { "id": "obj2", "text": "1 bonus kutuyu al", "type": "collectBonus", "count": 1, "optional": true }
+  ],
+  "budgetLimit": 320,
+  "wind": { "x": 0.2, "y": 0 },
+  "timeLimit": 70
+}

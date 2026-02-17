@@ -1,0 +1,28 @@
+{
+  "id": "level05",
+  "ad": "Seviye 05 - Çapraz Savunma",
+  "aciklama": "Sıkışık yapıda farklı hedef tiplerini temizle.",
+  "launchPoint": { "x": 120, "y": 355 },
+  "obstacles": [
+    { "id": "o1", "x": 610, "y": 500, "width": 130, "height": 80, "material": "wood", "durability": 95 },
+    { "id": "o2", "x": 740, "y": 460, "width": 90, "height": 120, "material": "metal", "durability": 150 },
+    { "id": "o3", "x": 860, "y": 430, "width": 90, "height": 150, "material": "wood", "durability": 105 },
+    { "id": "o4", "x": 980, "y": 390, "width": 90, "height": 190, "material": "metal", "durability": 160 }
+  ],
+  "targets": [
+    { "id": "t1", "x": 660, "y": 470, "radius": 22, "durability": 90, "targetType": "radar", "isObjective": true },
+    { "id": "t2", "x": 790, "y": 430, "radius": 22, "durability": 90, "targetType": "tower", "isObjective": true },
+    { "id": "t3", "x": 910, "y": 390, "radius": 24, "durability": 102, "targetType": "generator", "isObjective": true },
+    { "id": "t4", "x": 1030, "y": 350, "radius": 24, "durability": 110, "targetType": "radar", "isObjective": true }
+  ],
+  "bonusItems": [
+    { "id": "b1", "x": 710, "y": 260, "radius": 13 }
+  ],
+  "decorations": [],
+  "objectives": [
+    { "id": "obj1", "text": "4 hedefi yok et", "type": "destroyTargets", "count": 4 }
+  ],
+  "budgetLimit": 470,
+  "wind": { "x": -0.3, "y": 0.15 },
+  "timeLimit": 76
+}
